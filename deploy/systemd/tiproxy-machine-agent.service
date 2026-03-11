@@ -1,0 +1,20 @@
+[Unit]
+Description=TiProxy Machine Agent
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=simple
+EnvironmentFile=-/etc/tiproxy-machine-agent/env
+ExecStart=/usr/local/bin/tiproxy-machine-agent \
+  --namespace=${TIPROXY_MACHINE_NAMESPACE} \
+  --machine-group=${TIPROXY_MACHINE_GROUP} \
+  --machine-id=${TIPROXY_MACHINE_ID}
+Restart=always
+RestartSec=5
+LimitNOFILE=1048576
+
+[Install]
+WantedBy=multi-user.target
+

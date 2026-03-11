@@ -1,0 +1,57 @@
+#!/bin/bash
+set -euxo pipefail
+
+# 1) Install docker (assumes Amazon Linux 2/2023 style package manager)
+if command -v dnf >/dev/null 2>&1; then
+  dnf install -y docker
+else
+  yum install -y docker
+fi
+systemctl enable --now docker
+
+# 2) Install agent binary and systemd unit
+install -m 0755 /opt/tiproxy/bin/tiproxy-machine-agent /usr/local/bin/tiproxy-machine-agent
+install -m 0644 /opt/tiproxy/systemd/tiproxy-machine-agent.service /etc/systemd/system/tiproxy-machine-agent.service
+
+# 3) Runtime environment
+mkdir -p /etc/tiproxy-machine-agent
+cat >/etc/tiproxy-machine-agent/env <<'EOF'
+TIPROXY_MACHINE_NAMESPACE=${MACHINE_NAMESPACE}
+TIPROXY_MACHINE_GROUP=${MACHINE_GROUP}
+# TIPROXY_MACHINE_ID can be omitted and discovered via IMDS.
+# TIPROXY_KUBECONFIG points to the kubeconfig used by the agent.
+TIPROXY_KUBECONFIG=/etc/tiproxy-machine-agent/kubeconfig
+EOF
+
+# Optional: write kubeconfig if passed by template rendering.
+if [ -n "${KUBECONFIG_CONTENT_B64:-}" ]; then
+  echo "${KUBECONFIG_CONTENT_B64}" | base64 -d >/etc/tiproxy-machine-agent/kubeconfig
+  chmod 0600 /etc/tiproxy-machine-agent/kubeconfig
+fi
+
+# Optional: fetch kubeconfig from SSM Parameter Store.
+if [ -n "${KUBECONFIG_SSM_PARAMETER:-}" ]; then
+  if ! command -v aws >/dev/null 2>&1; then
+    echo "aws cli is required to fetch kubeconfig from SSM" >&2
+    exit 1
+  fi
+  if [ -n "${AWS_REGION:-}" ]; then
+    aws ssm get-parameter \
+      --name "${KUBECONFIG_SSM_PARAMETER}" \
+      --with-decryption \
+      --region "${AWS_REGION}" \
+      --query 'Parameter.Value' \
+      --output text >/etc/tiproxy-machine-agent/kubeconfig
+  else
+    aws ssm get-parameter \
+      --name "${KUBECONFIG_SSM_PARAMETER}" \
+      --with-decryption \
+      --query 'Parameter.Value' \
+      --output text >/etc/tiproxy-machine-agent/kubeconfig
+  fi
+  chmod 0600 /etc/tiproxy-machine-agent/kubeconfig
+fi
+
+# 4) Start agent
+systemctl daemon-reload
+systemctl enable --now tiproxy-machine-agent

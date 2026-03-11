@@ -1,0 +1,18 @@
+apiVersion: tiproxy.pingcap.com/v1alpha1
+kind: TiProxyMachineGroup
+metadata:
+  name: demo
+  namespace: default
+spec:
+  provider: none
+  replicas: 2
+  portRange:
+    start: 6000
+    end: 6099
+  tiproxy:
+    baseImage: pingcap/tiproxy
+    version: latest
+    apiPort: 3080
+    apiScheme: http
+    containerName: tiproxy
+    configPath: /var/lib/tiproxy-machine-agent/tiproxy.toml

@@ -1,0 +1,31 @@
+apiVersion: tiproxy.pingcap.com/v1alpha1
+kind: TiProxyMachineGroup
+metadata:
+  name: demo-aws
+  namespace: default
+spec:
+  provider: aws
+  replicas: 2
+  portRange:
+    start: 6000
+    end: 6099
+  infrastructure:
+    region: us-west-2
+    machineImage: ami-xxxxxxxxxxxxxxxxx
+    machineType: t3.large
+    subnetIDs:
+    - subnet-aaaaaaaa
+    - subnet-bbbbbbbb
+    securityGroupIDs:
+    - sg-cccccccc
+    instanceProfile: tiproxy-machine-agent-role
+  bootstrap:
+    kubeconfig:
+      path: /etc/tiproxy-machine-agent/kubeconfig
+      remoteRef:
+        backend: parameterStore
+        identifier: /tiproxy/demo/kubeconfig
+  tiproxy:
+    baseImage: pingcap/tiproxy
+    version: latest
+    apiPort: 3080
