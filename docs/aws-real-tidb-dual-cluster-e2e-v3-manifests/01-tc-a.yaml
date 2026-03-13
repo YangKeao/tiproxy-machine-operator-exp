@@ -1,0 +1,51 @@
+apiVersion: pingcap.com/v1alpha1
+kind: TidbCluster
+metadata:
+  name: tc-a
+  namespace: tidb
+spec:
+  version: v8.5.3
+  timezone: UTC
+  pvReclaimPolicy: Retain
+  enableDynamicConfiguration: true
+  configUpdateStrategy: RollingUpdate
+  discovery: {}
+  helper:
+    image: alpine:3.16.0
+  pd:
+    baseImage: pingcap/pd
+    replicas: 1
+    maxFailoverCount: 0
+    requests:
+      storage: 10Gi
+    storageClassName: gp2
+    nodeSelector:
+      dedicated: tidb
+    config: {}
+  tikv:
+    baseImage: pingcap/tikv
+    replicas: 3
+    maxFailoverCount: 0
+    requests:
+      storage: 10Gi
+    storageClassName: gp2
+    nodeSelector:
+      dedicated: tidb
+    config:
+      storage:
+        reserve-space: 0MB
+      rocksdb:
+        max-open-files: 256
+      raftdb:
+        max-open-files: 256
+  tidb:
+    baseImage: pingcap/tidb
+    replicas: 1
+    maxFailoverCount: 0
+    service:
+      type: ClusterIP
+    nodeSelector:
+      dedicated: tidb
+    config:
+      labels:
+        tiproxy-port: "6001"

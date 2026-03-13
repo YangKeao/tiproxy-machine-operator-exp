@@ -1,0 +1,25 @@
+apiVersion: tiproxy.pingcap.com/v1alpha1
+kind: TiDBResourcePoolLink
+metadata:
+  name: ${LINK_A}
+  namespace: default
+spec:
+  machineGroupRef:
+    name: ${MG_NAME}
+  clusterName: tc-a
+  pdAddresses:
+  - ${PD_A_ADDRESS}
+  nsServerAddress: ${NS_A_ADDRESS}
+---
+apiVersion: tiproxy.pingcap.com/v1alpha1
+kind: TiDBResourcePoolLink
+metadata:
+  name: ${LINK_B}
+  namespace: default
+spec:
+  machineGroupRef:
+    name: ${MG_NAME}
+  clusterName: tc-b
+  pdAddresses:
+  - ${PD_B_ADDRESS}
+  nsServerAddress: ${NS_B_ADDRESS}

@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"reflect"
 	"slices"
 	"strings"
 	"time"
@@ -17,18 +16,15 @@ import (
 	agentconfig "github.com/YangKeao/tiproxy-machine-operator/internal/agent/config"
 	"github.com/YangKeao/tiproxy-machine-operator/internal/agent/docker"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/util/retry"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
 type Agent struct {
 	Client       client.Client
-	Scheme       *runtime.Scheme
 	Docker       *docker.Runner
 	HTTPClient   *http.Client
 	Namespace    string
@@ -67,6 +63,11 @@ func (a *Agent) Run(ctx context.Context) error {
 	for {
 		select {
 		case <-ctx.Done():
+			cleanupCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			if err := a.removeMachineStatus(cleanupCtx); err != nil {
+				logger.Error(err, "best-effort machine status cleanup failed")
+			}
+			cancel()
 			return nil
 		case <-ticker.C:
 			runOnce()
@@ -97,18 +98,18 @@ func (a *Agent) syncOnce(ctx context.Context) error {
 		DefaultListenPort: mg.Spec.PortRange.Start,
 	})
 	if err != nil {
-		_ = a.upsertMachineStatus(ctx, mg, tiproxyv1alpha1.TiProxyMachinePhaseFailed, settings.image, "", err.Error())
+		_ = a.upsertMachineStatus(ctx, tiproxyv1alpha1.MachinePhaseFailed, settings.image, "", err.Error())
 		return err
 	}
 	cfgHash := agentconfig.HashBytes(cfgBytes)
 	if err := writeConfigFile(settings.configPath, cfgBytes); err != nil {
-		_ = a.upsertMachineStatus(ctx, mg, tiproxyv1alpha1.TiProxyMachinePhaseFailed, settings.image, cfgHash, err.Error())
+		_ = a.upsertMachineStatus(ctx, tiproxyv1alpha1.MachinePhaseFailed, settings.image, cfgHash, err.Error())
 		return err
 	}
 
 	running, err := a.Docker.IsRunning(ctx, settings.containerName)
 	if err != nil {
-		_ = a.upsertMachineStatus(ctx, mg, tiproxyv1alpha1.TiProxyMachinePhaseFailed, settings.image, cfgHash, err.Error())
+		_ = a.upsertMachineStatus(ctx, tiproxyv1alpha1.MachinePhaseFailed, settings.image, cfgHash, err.Error())
 		return err
 	}
 
@@ -122,7 +123,7 @@ func (a *Agent) syncOnce(ctx context.Context) error {
 			ExtraArgs:  settings.extraArgs,
 		})
 		if err != nil {
-			_ = a.upsertMachineStatus(ctx, mg, tiproxyv1alpha1.TiProxyMachinePhaseFailed, settings.image, cfgHash, err.Error())
+			_ = a.upsertMachineStatus(ctx, tiproxyv1alpha1.MachinePhaseFailed, settings.image, cfgHash, err.Error())
 			return err
 		}
 		justStarted = true
@@ -130,19 +131,19 @@ func (a *Agent) syncOnce(ctx context.Context) error {
 
 	if !justStarted && cfgHash != a.lastConfigHash {
 		if err := a.pushConfig(ctx, settings.apiBaseURL, cfgBytes); err != nil {
-			_ = a.upsertMachineStatus(ctx, mg, tiproxyv1alpha1.TiProxyMachinePhaseFailed, settings.image, cfgHash, err.Error())
+			_ = a.upsertMachineStatus(ctx, tiproxyv1alpha1.MachinePhaseFailed, settings.image, cfgHash, err.Error())
 			return err
 		}
 	}
 
 	a.lastConfigHash = cfgHash
-	phase := tiproxyv1alpha1.TiProxyMachinePhaseRunning
+	phase := tiproxyv1alpha1.MachinePhaseRunning
 	message := "tiproxy is running"
 	if justStarted {
-		phase = tiproxyv1alpha1.TiProxyMachinePhaseStarting
+		phase = tiproxyv1alpha1.MachinePhaseStarting
 		message = "tiproxy container started with rendered config"
 	}
-	return a.upsertMachineStatus(ctx, mg, phase, settings.image, cfgHash, message)
+	return a.upsertMachineStatus(ctx, phase, settings.image, cfgHash, message)
 }
 
 func (a *Agent) pushConfig(ctx context.Context, apiBaseURL string, cfg []byte) error {
@@ -163,75 +164,55 @@ func (a *Agent) pushConfig(ctx context.Context, apiBaseURL string, cfg []byte) e
 	return nil
 }
 
-func (a *Agent) upsertMachineStatus(ctx context.Context, mg *tiproxyv1alpha1.TiProxyMachineGroup, phase, image, cfgHash, message string) error {
-	key := types.NamespacedName{
-		Namespace: a.Namespace,
-		Name:      a.MachineID,
-	}
-	machine := &tiproxyv1alpha1.TiProxyMachine{}
-	if err := a.Client.Get(ctx, key, machine); err != nil {
-		if !apierrors.IsNotFound(err) {
+func (a *Agent) upsertMachineStatus(ctx context.Context, phase, image, cfgHash, message string) error {
+	key := types.NamespacedName{Namespace: a.Namespace, Name: a.MachineGroup}
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		mg := &tiproxyv1alpha1.TiProxyMachineGroup{}
+		if err := a.Client.Get(ctx, key, mg); err != nil {
 			return err
 		}
-		machine = &tiproxyv1alpha1.TiProxyMachine{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      a.MachineID,
-				Namespace: a.Namespace,
-				Labels: map[string]string{
-					"tiproxy.pingcap.com/machine-group": mg.Name,
-				},
-			},
-			Spec: tiproxyv1alpha1.TiProxyMachineSpec{
-				MachineGroupRef:    tiproxyv1alpha1.ObjectReference{Name: mg.Name, Namespace: mg.Namespace},
-				ProviderInstanceID: a.MachineID,
-			},
+		statusBase := mg.DeepCopy()
+		if mg.Status.Machines == nil {
+			mg.Status.Machines = map[string]tiproxyv1alpha1.MachineStatus{}
 		}
-		if err := controllerutil.SetOwnerReference(mg, machine, a.Scheme); err == nil {
-			// Best effort owner reference.
+		mg.Status.Machines[a.MachineID] = tiproxyv1alpha1.MachineStatus{
+			ObservedGeneration: mg.Generation,
+			LastHeartbeatTime:  metav1.Now(),
+			Phase:              phase,
+			ConfigHash:         cfgHash,
+			TiProxyImage:       image,
+			Message:            message,
 		}
-		if err := a.Client.Create(ctx, machine); err != nil {
-			return err
-		}
-	} else {
-		base := machine.DeepCopy()
-		if machine.Labels == nil {
-			machine.Labels = map[string]string{}
-		}
-		machine.Labels["tiproxy.pingcap.com/machine-group"] = mg.Name
-		machine.Spec.MachineGroupRef = tiproxyv1alpha1.ObjectReference{Name: mg.Name, Namespace: mg.Namespace}
-		machine.Spec.ProviderInstanceID = a.MachineID
-		if !reflect.DeepEqual(base.Labels, machine.Labels) || !reflect.DeepEqual(base.Spec, machine.Spec) {
-			if err := a.Client.Patch(ctx, machine, client.MergeFrom(base)); err != nil {
-				return err
-			}
-		}
-	}
-
-	if err := a.Client.Get(ctx, key, machine); err != nil {
-		return err
-	}
-	statusBase := machine.DeepCopy()
-	machine.Status.ObservedGeneration = mg.Generation
-	machine.Status.Phase = phase
-	machine.Status.ConfigHash = cfgHash
-	machine.Status.TiProxyImage = image
-	machine.Status.Message = message
-	machine.Status.LastHeartbeatTime = metav1.Now()
-	conditionStatus := metav1.ConditionTrue
-	reason := "Healthy"
-	if phase == tiproxyv1alpha1.TiProxyMachinePhaseFailed {
-		conditionStatus = metav1.ConditionFalse
-		reason = "SyncFailed"
-	}
-	apimeta.SetStatusCondition(&machine.Status.Conditions, metav1.Condition{
-		Type:               tiproxyv1alpha1.ConditionReady,
-		Status:             conditionStatus,
-		Reason:             reason,
-		Message:            message,
-		ObservedGeneration: mg.Generation,
-		LastTransitionTime: metav1.Now(),
+		return a.Client.Status().Patch(ctx, mg, client.MergeFrom(statusBase))
 	})
-	return a.Client.Status().Patch(ctx, machine, client.MergeFrom(statusBase))
+}
+
+func (a *Agent) removeMachineStatus(ctx context.Context) error {
+	if a.MachineGroup == "" || a.MachineID == "" {
+		return nil
+	}
+	key := types.NamespacedName{Namespace: a.Namespace, Name: a.MachineGroup}
+	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
+		mg := &tiproxyv1alpha1.TiProxyMachineGroup{}
+		if err := a.Client.Get(ctx, key, mg); err != nil {
+			if apierrors.IsNotFound(err) {
+				return nil
+			}
+			return err
+		}
+		if mg.Status.Machines == nil {
+			return nil
+		}
+		if _, ok := mg.Status.Machines[a.MachineID]; !ok {
+			return nil
+		}
+		statusBase := mg.DeepCopy()
+		delete(mg.Status.Machines, a.MachineID)
+		if len(mg.Status.Machines) == 0 {
+			mg.Status.Machines = nil
+		}
+		return a.Client.Status().Patch(ctx, mg, client.MergeFrom(statusBase))
+	})
 }
 
 type runtimeSettings struct {

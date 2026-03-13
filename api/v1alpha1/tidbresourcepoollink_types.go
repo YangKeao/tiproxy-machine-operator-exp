@@ -5,22 +5,22 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// TiDBInstanceLink links one TiDB cluster to one TiProxyMachineGroup.
-type TiDBInstanceLink struct {
+// +kubebuilder:object:root=true
+// +kubebuilder:subresource:status
+// +kubebuilder:resource:path=tidbresourcepoollinks,scope=Namespaced,shortName=tdbrpl
+// TiDBResourcePoolLink links one TiDB resource pool to one TiProxyMachineGroup.
+type TiDBResourcePoolLink struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
-	Spec   TiDBInstanceLinkSpec   `json:"spec,omitempty"`
-	Status TiDBInstanceLinkStatus `json:"status,omitempty"`
+	Spec   TiDBResourcePoolLinkSpec   `json:"spec,omitempty"`
+	Status TiDBResourcePoolLinkStatus `json:"status,omitempty"`
 }
 
-type TiDBInstanceLinkSpec struct {
+type TiDBResourcePoolLinkSpec struct {
 	MachineGroupRef ObjectReference `json:"machineGroupRef"`
-	// This means the name of the resource pool.
-	ClusterName string `json:"clusterName,omitempty"`
-	// Port pins this link to a specific frontend port.
-	// If unset, the controller allocates one from TiProxyMachineGroup.spec.portRange.
-	Port           *int32                       `json:"port,omitempty"`
+	// ClusterName is the resource pool name in TiProxy.
+	ClusterName    string                       `json:"clusterName,omitempty"`
 	RouteNamespace string                       `json:"routeNamespace,omitempty"`
 	FrontendUser   string                       `json:"frontendUser,omitempty"`
 	PDAddresses    []string                     `json:"pdAddresses,omitempty"`
@@ -29,16 +29,16 @@ type TiDBInstanceLinkSpec struct {
 	Disabled       bool                         `json:"disabled,omitempty"`
 }
 
-type TiDBInstanceLinkStatus struct {
+type TiDBResourcePoolLinkStatus struct {
 	ObservedGeneration int64              `json:"observedGeneration,omitempty"`
-	AssignedPort       *int32             `json:"assignedPort,omitempty"`
 	Phase              string             `json:"phase,omitempty"`
 	Conditions         []metav1.Condition `json:"conditions,omitempty"`
 }
 
-// TiDBInstanceLinkList contains a list of TiDBInstanceLink.
-type TiDBInstanceLinkList struct {
+// +kubebuilder:object:root=true
+// TiDBResourcePoolLinkList contains a list of TiDBResourcePoolLink.
+type TiDBResourcePoolLinkList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`
-	Items           []TiDBInstanceLink `json:"items"`
+	Items           []TiDBResourcePoolLink `json:"items"`
 }

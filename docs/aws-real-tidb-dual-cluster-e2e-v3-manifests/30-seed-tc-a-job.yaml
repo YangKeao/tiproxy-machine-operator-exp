@@ -1,0 +1,17 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: seed-a
+  namespace: tidb
+spec:
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: mysql
+        image: mysql:8
+        command:
+        - sh
+        - -c
+        - |
+          mysql -h tc-a-tidb -P 4000 -uroot -e "CREATE DATABASE IF NOT EXISTS routecheck; CREATE TABLE IF NOT EXISTS routecheck.marker (id INT PRIMARY KEY, val VARCHAR(16)); REPLACE INTO routecheck.marker VALUES (1, 'A'); CREATE USER IF NOT EXISTS 'tiproxy_test'@'%' IDENTIFIED BY 'Tiproxy#Pass123'; GRANT ALL PRIVILEGES ON routecheck.* TO 'tiproxy_test'@'%'; FLUSH PRIVILEGES;"

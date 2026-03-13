@@ -1,0 +1,26 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: tiproxy-manager
+  namespace: tiproxy-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: tiproxy-manager
+  template:
+    metadata:
+      labels:
+        app: tiproxy-manager
+    spec:
+      serviceAccountName: tiproxy-manager
+      containers:
+      - name: manager
+        image: ${MANAGER_IMAGE}
+        imagePullPolicy: Always
+        args:
+        - --cloud-provider=aws
+        - --aws-region=${AWS_REGION}
+        envFrom:
+        - secretRef:
+            name: aws-creds

@@ -71,7 +71,6 @@ func main() {
 
 	a := &agent.Agent{
 		Client:       cl,
-		Scheme:       scheme,
 		Docker:       docker.NewRunner(dockerHost),
 		Namespace:    namespace,
 		MachineGroup: machineGroup,

@@ -9,16 +9,39 @@ spec:
   portRange:
     start: 6000
     end: 6099
-  infrastructure:
+  exposure:
+    loadBalancers:
+    - name: internal
+      scope: internal
+    # - name: public
+    #   scope: external
+    #   subnetIDs:
+    #   - subnet-public-aaaaaaaa
+    #   - subnet-public-bbbbbbbb
+  placement:
     region: us-west-2
-    machineImage: ami-xxxxxxxxxxxxxxxxx
-    machineType: t3.large
+    # failureDomains:
+    # - us-west-2a
+    # - us-west-2b
+    # spreadPolicy: Balanced
+  machine:
+    image: ami-xxxxxxxxxxxxxxxxx
+    class: t3.large
+    identityRef: tiproxy-machine-agent-role
+  # scaling:
+  #   minReplicas: 2
+  #   maxReplicas: 4
+  # resourceNames:
+  #   group: demo-aws-asg
+  #   machineTemplate: demo-aws-lt
+  # tags:
+  #   env: demo
+  network:
     subnetIDs:
     - subnet-aaaaaaaa
     - subnet-bbbbbbbb
     securityGroupIDs:
     - sg-cccccccc
-    instanceProfile: tiproxy-machine-agent-role
   bootstrap:
     kubeconfig:
       path: /etc/tiproxy-machine-agent/kubeconfig

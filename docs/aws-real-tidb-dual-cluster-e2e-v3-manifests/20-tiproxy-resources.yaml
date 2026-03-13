@@ -1,0 +1,98 @@
+apiVersion: tiproxy.pingcap.com/v1alpha1
+kind: TiProxyMachineGroup
+metadata:
+  name: demo
+  namespace: default
+spec:
+  provider: aws
+  replicas: 1
+  portRange:
+    start: 6000
+    end: 6099
+  exposure:
+    type: loadBalancer
+    scope: internal
+  placement:
+    region: ${AWS_REGION}
+  machine:
+    image: ${AMI_ID}
+    class: t3.large
+    identityRef: ${TIPROXY_INSTANCE_PROFILE}
+  network:
+    subnetIDs:
+    - ${TIPROXY_SUBNET_A}
+    - ${TIPROXY_SUBNET_B}
+    securityGroupIDs:
+    - ${TIPROXY_SG_ID}
+  bootstrap:
+    userData: |
+      #!/bin/bash
+      set -euxo pipefail
+      dnf install -y docker awscli
+      systemctl enable --now docker
+      mkdir -p /usr/local/bin /etc/systemd/system /etc/tiproxy-machine-agent /var/lib/tiproxy-machine-agent
+      aws s3 cp s3://${ARTIFACT_BUCKET}/tiproxy-machine-agent /usr/local/bin/tiproxy-machine-agent --region ${AWS_REGION}
+      chmod +x /usr/local/bin/tiproxy-machine-agent
+      aws s3 cp s3://${ARTIFACT_BUCKET}/tiproxy-machine-agent.service /etc/systemd/system/tiproxy-machine-agent.service --region ${AWS_REGION}
+      grep -q 'search cluster.local' /etc/resolv.conf || printf '\nsearch cluster.local\n' >> /etc/resolv.conf || true
+      cat >/etc/tiproxy-machine-agent/env <<'ENVEOF'
+      TIPROXY_MACHINE_NAMESPACE=default
+      TIPROXY_MACHINE_GROUP=demo
+      TIPROXY_KUBECONFIG=/etc/tiproxy-machine-agent/kubeconfig
+      ENVEOF
+      aws ssm get-parameter --name "${AGENT_KUBECONFIG_PARAM}" --with-decryption --query 'Parameter.Value' --output text --region ${AWS_REGION} >/etc/tiproxy-machine-agent/kubeconfig
+      chmod 0600 /etc/tiproxy-machine-agent/kubeconfig
+      systemctl daemon-reload
+      systemctl enable --now tiproxy-machine-agent
+  tiproxy:
+    baseImage: ${TIPROXY_BASE_IMAGE}
+    version: ${TIPROXY_VERSION}
+    apiPort: 3080
+---
+apiVersion: tiproxy.pingcap.com/v1alpha1
+kind: TiProxyMachinePort
+metadata:
+  name: port-a
+  namespace: default
+spec:
+  machineGroupRef:
+    name: demo
+  requestedPort: 6001
+  protocol: TCP
+---
+apiVersion: tiproxy.pingcap.com/v1alpha1
+kind: TiProxyMachinePort
+metadata:
+  name: port-b
+  namespace: default
+spec:
+  machineGroupRef:
+    name: demo
+  requestedPort: 6002
+  protocol: TCP
+---
+apiVersion: tiproxy.pingcap.com/v1alpha1
+kind: TiDBResourcePoolLink
+metadata:
+  name: link-a
+  namespace: default
+spec:
+  machineGroupRef:
+    name: demo
+  clusterName: tc-a
+  pdAddresses:
+  - tc-a-pd-peer.tidb.svc.cluster.local:2379
+  nsServerAddress: ${NS_A_ADDRESS}
+---
+apiVersion: tiproxy.pingcap.com/v1alpha1
+kind: TiDBResourcePoolLink
+metadata:
+  name: link-b
+  namespace: default
+spec:
+  machineGroupRef:
+    name: demo
+  clusterName: tc-b
+  pdAddresses:
+  - tc-b-pd-peer.tidb.svc.cluster.local:2379
+  nsServerAddress: ${NS_B_ADDRESS}

@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"time"
 
 	tiproxyv1alpha1 "github.com/YangKeao/tiproxy-machine-operator/api/v1alpha1"
 	"github.com/YangKeao/tiproxy-machine-operator/internal/cloud"
@@ -23,17 +24,19 @@ import (
 
 func main() {
 	var (
-		metricsAddr          string
-		healthProbeAddr      string
-		enableLeaderElection bool
-		cloudProvider        string
-		awsRegion            string
+		metricsAddr             string
+		healthProbeAddr         string
+		enableLeaderElection    bool
+		cloudProvider           string
+		awsRegion               string
+		machineStatusStaleAfter time.Duration
 	)
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
 	flag.StringVar(&healthProbeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false, "Enable leader election for controller manager.")
 	flag.StringVar(&cloudProvider, "cloud-provider", "noop", "Cloud provider implementation: noop or aws.")
 	flag.StringVar(&awsRegion, "aws-region", "", "AWS region override when cloud-provider=aws.")
+	flag.DurationVar(&machineStatusStaleAfter, "machine-status-stale-after", 10*time.Minute, "Prune status.machines entries with stale heartbeat older than this duration. Set <=0 to disable.")
 
 	opts := zap.Options{
 		Development: true,
@@ -63,10 +66,11 @@ func main() {
 	}
 
 	if err := (&controller.MachineGroupReconciler{
-		Client:       mgr.GetClient(),
-		Scheme:       mgr.GetScheme(),
-		CloudManager: cloudManager,
-		Provider:     cloudProvider,
+		Client:                  mgr.GetClient(),
+		Scheme:                  mgr.GetScheme(),
+		CloudManager:            cloudManager,
+		Provider:                cloudProvider,
+		MachineStatusStaleAfter: machineStatusStaleAfter,
 	}).SetupWithManager(mgr); err != nil {
 		klog.ErrorS(err, "unable to create controller", "controller", "TiProxyMachineGroup")
 		os.Exit(1)

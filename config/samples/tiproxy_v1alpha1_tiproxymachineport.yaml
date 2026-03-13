@@ -1,0 +1,10 @@
+apiVersion: tiproxy.pingcap.com/v1alpha1
+kind: TiProxyMachinePort
+metadata:
+  name: demo-port
+  namespace: default
+spec:
+  machineGroupRef:
+    name: demo
+  requestedPort: 6001
+  protocol: TCP

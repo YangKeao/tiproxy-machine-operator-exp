@@ -9,6 +9,10 @@ spec:
   portRange:
     start: 6000
     end: 6099
+  exposure:
+    loadBalancers:
+    - name: internal
+      scope: internal
   tiproxy:
     baseImage: pingcap/tiproxy
     version: latest

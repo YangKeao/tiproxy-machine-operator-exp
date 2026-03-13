@@ -1,3 +1,6 @@
+// Package v1alpha1 contains API Schema definitions for the tiproxy.pingcap.com v1alpha1 API group.
+// +kubebuilder:object:generate=true
+// +groupName=tiproxy.pingcap.com
 package v1alpha1
 
 import (
@@ -21,10 +24,10 @@ func addKnownTypes(scheme *runtime.Scheme) error {
 	scheme.AddKnownTypes(GroupVersion,
 		&TiProxyMachineGroup{},
 		&TiProxyMachineGroupList{},
-		&TiDBInstanceLink{},
-		&TiDBInstanceLinkList{},
-		&TiProxyMachine{},
-		&TiProxyMachineList{},
+		&TiDBResourcePoolLink{},
+		&TiDBResourcePoolLinkList{},
+		&TiProxyMachinePort{},
+		&TiProxyMachinePortList{},
 	)
 	metav1.AddToGroupVersion(scheme, GroupVersion)
 	return nil

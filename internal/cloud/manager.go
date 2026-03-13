@@ -8,16 +8,21 @@ import (
 )
 
 type Manager interface {
-	EnsureMachineGroup(ctx context.Context, mg *tiproxyv1alpha1.TiProxyMachineGroup) (tiproxyv1alpha1.CloudStatus, error)
+	EnsureMachineGroup(
+		ctx context.Context,
+		mg *tiproxyv1alpha1.TiProxyMachineGroup,
+		machinePorts []tiproxyv1alpha1.TiProxyMachinePort,
+		allocatedPorts map[string]int32,
+	) (tiproxyv1alpha1.CloudStatus, map[string]tiproxyv1alpha1.MachinePortCloudStatus, error)
 	DeleteMachineGroup(ctx context.Context, mg *tiproxyv1alpha1.TiProxyMachineGroup) error
 }
 
 func ResolveNames(mg *tiproxyv1alpha1.TiProxyMachineGroup) (launchTemplateName, asgName string) {
-	launchTemplateName = mg.Spec.Infrastructure.MachineTemplateName
+	launchTemplateName = mg.Spec.ResourceNames.MachineTemplate
 	if launchTemplateName == "" {
 		launchTemplateName = fmt.Sprintf("%s-%s-lt", mg.Namespace, mg.Name)
 	}
-	asgName = mg.Spec.Infrastructure.ScalingGroupName
+	asgName = mg.Spec.ResourceNames.Group
 	if asgName == "" {
 		asgName = fmt.Sprintf("%s-%s-asg", mg.Namespace, mg.Name)
 	}
